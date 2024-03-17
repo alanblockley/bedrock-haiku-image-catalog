@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  AI Photo album
+
+Globals:
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+      AllowCredentials: "'*'"
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: python3.11
+    Environment:
+      Variables:
+        INCOMING_BUCKET: !Sub '${Prefix}-${Workload}-incoming'
+        IMAGE_BUCKET: !Sub '${Prefix}-${Workload}-images'
+        IMAGE_TABLE: !Ref ImageTable
+    Architectures:
+      - arm64
+
+Parameters:
+
+  Prefix:
+    Type: String
+    Description: Prefix for all resources
+    Default: dbla-ml
+  
+  Workload:
+    Type: String
+    Description: Workload of the application
+    Default: photo-album
+
+  BedrockLayerArn:
+    Type: String
+    Description: ARN of the Bedrock layer
+    Default: arn:aws:lambda:us-west-2:168420111683:layer:bedrock-layer:1
+
+Resources:
+
+### Backend resources
+  ImageTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: id
+        Type: String
+      TableName: !Sub '${Prefix}-${Workload}-image-table'
+
+  IncomingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${Prefix}-${Workload}-incoming'
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  ImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${Prefix}-${Workload}-images'
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  RenameImageFunction:
+    Type: AWS::Serverless::Function 
+    Properties:
+      CodeUri: rename_image/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref BedrockLayerArn
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub '${Prefix}-${Workload}-incoming'
+        - S3WritePolicy:
+            BucketName: !Sub '${Prefix}-${Workload}-images'
+      Events:
+        S3ObjectCreated:
+          Type: S3
+          Properties:
+            Bucket: 
+              Ref: IncomingBucket
+            Events: s3:ObjectCreated:*
+
+  SummariseImageFunction:
+    Type: AWS::Serverless::Function 
+    Properties:
+      CodeUri: summarise_image/
+      Handler: app.lambda_handler
+      Layers:
+        - !Ref BedrockLayerArn
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref ImageTable
+        - S3ReadPolicy:
+            BucketName: !Sub '${Prefix}-${Workload}-images'
+        - Statement:
+            - Sid: Bedrock
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/*'
+      Events:
+        S3ObjectCreated:
+          Type: S3
+          Properties:
+            Bucket: 
+              Ref: ImageBucket
+            Events: s3:ObjectCreated:*
+
+  GetImagesFunction:
+    Type: AWS::Serverless::Function 
+    Properties:
+      CodeUri: get_images/
+      Handler: app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ImageTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /images
+            Method: get
+
+### Front end resources
+  ImageHostingOriginaccessidentity:
+      Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+      Properties:
+        CloudFrontOriginAccessIdentityConfig:
+          Comment: !Sub ${Prefix}-${Workload}-originaccessidentity
+
+  ImageHostingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref ImageBucket
+      PolicyDocument:
+        Statement:
+          -
+            Action:
+              - "s3:GetObject"
+            Effect: "Allow"
+            Resource: 
+              Fn::Join: 
+                - ""
+                - 
+                  - "arn:aws:s3:::"
+                  - 
+                    Ref: ImageBucket
+                  - "/*"
+            Principal:
+              CanonicalUser: !GetAtt ImageHostingOriginaccessidentity.S3CanonicalUserId
+
+  ImageHostingCloudFront:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${Prefix}-${Workload}-distribution
+        DefaultRootObject: index.html
+        CustomErrorResponses:
+          - ErrorCode: 400
+            ResponseCode: 200
+            ResponsePagePath: "/error.html"
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: "/error.html"
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: "/error.html"        
+        Origins:
+        - Id: ImageBucket
+          DomainName: !Sub ${ImageBucket}.s3.${AWS::Region}.amazonaws.com      
+          S3OriginConfig:
+            OriginAccessIdentity: !Join [ "", [ "origin-access-identity/cloudfront/", !Ref ImageHostingOriginaccessidentity ] ]
+                                
+        DefaultCacheBehavior:                    
+          TargetOriginId: ImageBucket
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: false
+          CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+          ResponseHeadersPolicyId: "5cc3b908-e619-4b99-88e5-2cf7f45965bd"
+          OriginRequestPolicyId: "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf"
