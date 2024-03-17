@@ -27,7 +27,7 @@ Parameters:
   Prefix:
     Type: String
     Description: Prefix for all resources
-    Default: dbla-ml
+    Default: my-ml
   
   Workload:
     Type: String
