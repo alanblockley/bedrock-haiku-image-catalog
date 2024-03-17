@@ -34,3 +34,7 @@ sam build --use-container
 sam deploy --guided
 ```
 
+## Deploy the front end
+
+Once your SAM stack is deployed ensure you copy your frontend files to the S3 bucket for images
+

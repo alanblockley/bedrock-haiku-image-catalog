@@ -41,8 +41,6 @@ def get_image_base64(bucket, key):
 
 def get_image_type(bucket, key):
     # Get the Mime type using object key and head_object
-    # Must use head_object
-
     try:
         response = s3.head_object(Bucket=bucket, Key=key)
     except ClientError as e:
@@ -55,7 +53,6 @@ def get_image_type(bucket, key):
 
 def generate_summary(image_base64, content_type):
     # Generate a summary of the input image using the Bedrock Runtime and claude3 model 
-    # Must usee invoke_model
 
     prompt = """Your purpose is to catalog images based upon common categories. 
 Create a structured set of data in json providing a summary of the image and a very short, generalised, image category.  Do not return any narrative language.
@@ -129,7 +126,6 @@ Look at the images in detail, looking for people, animals, landmarks or features
 
 def store_summary(object_id, summary, category):
     # Store the summary in DynamoDB
-    # Must use put_item
     
     table = dynamodb.Table(IMAGE_TABLE)
     table.put_item(
