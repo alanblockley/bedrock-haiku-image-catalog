@@ -1,3 +1,5 @@
+// main.js - Supporting javascript
+
 var cloudFrontURL = "https://d3a1ep9ta61l6i.cloudfront.net"
 var apiURL = "https://gtmx1c136h.execute-api.us-west-2.amazonaws.com/Prod"
 

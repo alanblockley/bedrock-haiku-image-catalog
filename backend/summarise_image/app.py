@@ -1,3 +1,4 @@
+# summarise_image/
 import os
 import json
 import boto3
