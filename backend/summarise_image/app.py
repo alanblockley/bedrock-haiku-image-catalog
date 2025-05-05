@@ -91,38 +91,33 @@ Output the json structure as a stringin <json> XML tags.  Do not return any narr
 Look at the images in detail, looking for people, animals, landmarks or features and where possible try to identify them.
 """
     
-    response = bedrock_runtime.invoke_model(
-        modelId='anthropic.claude-3-haiku-20240307-v1:0',
-        contentType='application/json',
-        accept='application/json',
-        body=json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 1000,
-            "system": prompt,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image", 
-                            "source": {
-                                "type": "base64",
-                                "media_type": content_type,
-                                "data": image_base64
-                            }
-                        },
-                        # {
-                        #     "type": "text",
-                        #     "text": prompt
-                        # }
-                    ]
-                }
-            ]
-        })
+    response = bedrock_runtime.converse(
+        modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+        system=prompt,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image", 
+                        "source": {
+                            "type": "base64",
+                            "media_type": content_type,
+                            "data": image_base64
+                        }
+                    }
+                ]
+            }
+        ],
+        configurationOverrides={
+            "max_tokens": 1000
+        }
     )
 
     print(response)
-    return json.loads(response.get('body').read())
+    # Extract the response message content from the converse API response format
+    response_content = response['output']['message']['content'][0]['text']
+    return response_content
 
 def store_summary(object_id, summary, category):
     # Store the summary in DynamoDB
@@ -151,12 +146,11 @@ def lambda_handler(event, context):
         }
     else:
         image_base64 = base64.b64encode(image_base64).decode('utf-8')
-        response_body = generate_summary(image_base64, image_type)
+        response_text = generate_summary(image_base64, image_type)
         
-        print(response_body)
+        print(response_text)
         
-        summary = response_body['content'][0]['text']
-        json_summary = json.loads(extract_substring(summary, "<json>", "</json>"))
+        json_summary = json.loads(extract_substring(response_text, "<json>", "</json>"))
         
         image_summary = json_summary['image_summary']
         image_category = json_summary['image_category']
